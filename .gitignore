@@ -1,0 +1,5 @@
+# Inventaire réel : peut contenir des adresses et des noms d'utilisateurs internes.
+/equipements.csv
+
+# Configurations réseau sauvegardées : potentiellement sensibles.
+/sauvegardes/
