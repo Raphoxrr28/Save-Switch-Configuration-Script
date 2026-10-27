@@ -1,4 +1,4 @@
-# Sauvegarde la configuration de chaque équipement listé dans le fichier CSV.
+﻿# Sauvegarde la configuration de chaque équipement listé dans le fichier CSV.
 # Exemple d'utilisation :
 #   .\script-save.ps1
 #   .\script-save.ps1 -Inventory ".\equipements.csv" -BackupFolder ".\sauvegardes"
@@ -40,7 +40,7 @@ if (Test-Path -LiteralPath $BackupFolder -PathType Container) {
         if ($isDatedBackup -and $backupDate -lt $cutoff -and
             -not ($oldBackup.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
             Remove-Item -LiteralPath $oldBackup.FullName -Recurse -Force
-            Write-Host "[SUPPRIME] Sauvegarde de plus de 30 jours : $($oldBackup.Name)"
+            Write-Information "[SUPPRIME] Sauvegarde de plus de 30 jours : $($oldBackup.Name)" -InformationAction Continue
         }
     }
 }
@@ -65,20 +65,37 @@ foreach ($device in $devices) {
             $device.User.Trim()
         }
         if ([string]::IsNullOrWhiteSpace($user)) {
-            throw 'Le nom d’utilisateur SSH ne peut pas être vide.'
+            throw "Le nom d'utilisateur SSH ne peut pas être vide."
         }
 
-        # Prépare les commandes adaptées à la plateforme et un motif permettant
-        # de vérifier que la réponse contient bien une configuration.
-        $platform = if ($device.Platform) { $device.Platform } else { 'CiscoIOS' }
+        # Prépare les commandes adaptées à la plateforme, le constructeur à afficher
+        # dans le dossier, et un motif de contrôle de la configuration reçue.
+        $platform = if ($device.Platform) { $device.Platform.Trim() } else { 'CiscoIOS' }
         switch ($platform.ToLowerInvariant()) {
             'ciscoios' {
+                $manufacturer = 'Cisco'
                 $commands = "terminal length 0`nshow running-config`nexit"
                 $expectedConfigPattern = '(?im)^\s*hostname\s+\S+'
             }
             'hp1920' {
+                $manufacturer = 'HP'
                 $commands = "_cmdline-mode on`ny`nscreen-length disable`ndisplay current-configuration`nquit"
                 $expectedConfigPattern = '(?im)^\s*sysname\s+\S+'
+            }
+            'aruba' {
+                $manufacturer = 'Aruba'
+                $commands = "no page`nshow running-config`nexit"
+                $expectedConfigPattern = '(?im)^\s*(?:hostname\s+\S+|;\s*.*configuration editor)'
+            }
+            'arubaos-cx' {
+                $manufacturer = 'Aruba'
+                $commands = "no page`nshow running-config`nexit"
+                $expectedConfigPattern = '(?im)^\s*(?:hostname\s+\S+|;\s*.*configuration editor)'
+            }
+            { $_ -in 'arubaos-switch', 'hpprocurve' } {
+                $manufacturer = if ($platform.ToLowerInvariant() -eq 'hpprocurve') { 'HP' } else { 'Aruba' }
+                $commands = "no page`nshow running-config`nexit"
+                $expectedConfigPattern = '(?im)^\s*(?:hostname\s+\S+|;\s*.*configuration editor)'
             }
             default { throw "Plateforme non prise en charge : $platform" }
         }
@@ -107,14 +124,15 @@ foreach ($device in $devices) {
             throw "La sortie SSH ne contient pas la configuration attendue pour $platform."
         }
 
-        # Crée un dossier par équipement, nommé avec la date/heure et l'adresse IP,
+        # Crée un dossier par équipement, nommé avec la date/heure, le constructeur
+        # et l'adresse IP,
         # puis écrit la configuration dans un fichier texte à l'intérieur.
         $safeHost = $device.Host -replace '[<>:"/\\|?*]', '_'
-        $deviceFolder = Join-Path $BackupFolder ($runTimestamp + '_' + $safeHost)
+        $deviceFolder = Join-Path $BackupFolder ($runTimestamp + '_' + $manufacturer + '_' + $safeHost)
         New-Item -ItemType Directory -Path $deviceFolder -Force | Out-Null
         $file = (($name -replace '[<>:"/\\|?*]', '_') + '_' + $safeHost + '.txt')
         $config | Out-File -FilePath (Join-Path $deviceFolder $file) -Encoding utf8
-        Write-Host "[OK] $name : $deviceFolder"
+        Write-Information "[OK] $name : $deviceFolder" -InformationAction Continue
         $successCount++
     }
     catch {
@@ -129,9 +147,9 @@ foreach ($device in $devices) {
 }
 
 # Affiche le résumé global et retourne un code d'erreur si au moins un équipement a échoué.
-Write-Host "Sauvegardes dans : $BackupFolder"
-Write-Host "Bilan : $successCount réussite(s), $($failureDetails.Count) échec(s) sur $($devices.Count)."
+Write-Information "Sauvegardes dans : $BackupFolder" -InformationAction Continue
+Write-Information "Bilan : $successCount réussite(s), $($failureDetails.Count) échec(s) sur $($devices.Count)." -InformationAction Continue
 foreach ($failure in $failureDetails) {
-    Write-Host " - $($failure.Name) : $($failure.Error)"
+    Write-Information " - $($failure.Name) : $($failure.Error)" -InformationAction Continue
 }
 if ($failureDetails.Count -gt 0) { exit 1 }

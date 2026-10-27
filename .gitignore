@@ -3,3 +3,7 @@
 
 # Configurations réseau sauvegardées : potentiellement sensibles.
 /sauvegardes/
+
+# Fichiers temporaires générés par Python.
+__pycache__/
+*.py[cod]
